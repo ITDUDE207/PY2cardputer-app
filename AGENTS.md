@@ -25,6 +25,8 @@ python -m compileall -q .              # syntax check
   import `ui`, `ai`, `github` or `compiler`.
 - `ai/`, `github/` and `compiler/` are service adapters. They raise typed errors
   from `core/errors.py` and never print to stdout.
+- `ui/api_key_dialog.py` is the only in-app API key entry point; it calls
+  `Py2CardputerApp.save_api_key`, which writes only to `.env`.
 - `ui/` only renders state and submits work; all network/Git/compiler work runs
   on `ThreadPoolExecutor` and reports through a `queue.Queue` drained by
   `after()`.
@@ -39,9 +41,10 @@ python -m compileall -q .              # syntax check
 - Folder/ZIP inputs become an in-memory bundle. ZIPs are never extracted; reject
   traversal, drive/stream paths, symlinks, encryption and oversized archives.
   Dotfiles and cache/VCS directories are excluded.
-- API key comes from `.env`/environment. Never write it to `config.json`, logs,
-  job metadata or GUI output. `core.logger.register_secret` + `redact` protect
-  logs.
+- API key comes from `.env`/environment or the in-app Dashboard/Settings save
+  dialog. Never write it to `config.json`, logs, job metadata, GitHub or a pull
+  request; the full key must not appear in GUI output. `core.logger.register_secret`
+  + `redact` protect logs.
 - New jobs must never overwrite an existing build directory.
 - Keep the GUI thread free; no blocking calls in widget callbacks.
 
@@ -52,7 +55,7 @@ from `OPENHANDS_API_KEY`. `config.json` is safe to commit; `.env` is ignored.
 
 ## Tests and environment limits
 
-- 203 tests, including a real-git round trip against a local bare repo
+- 204 tests, including a real-git round trip against a local bare repo
   (`tests/test_git_integration.py`), skipped if git is absent.
 - `tests/test_ui_imports.py` stubs `tkinter`/`customtkinter`; Tk rendering cannot
   be tested headlessly.

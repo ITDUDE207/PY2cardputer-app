@@ -73,7 +73,8 @@ class AboutPage(ctk.CTkFrame):
             text=(
                 "•  Branches, files and repositories are never deleted or merged automatically.\n"
                 "•  Conversion files are never pushed to main by Py2Cardputer.\n"
-                "•  API keys are read from .env and redacted from logs and error messages.\n"
+                "•  API keys can be saved in-app only to .env; they are never sent to GitHub "
+                "or a pull request and are redacted from logs and errors.\n"
                 "•  Python sources are parsed, not executed.\n"
                 "•  A successful local compile does not prove the firmware runs on hardware; "
                 "flash and test it yourself.\n"

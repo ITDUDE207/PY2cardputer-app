@@ -60,6 +60,7 @@ def gui_stubs(monkeypatch):
 
 def test_ui_modules_import(gui_stubs) -> None:
     import ui.about
+    import ui.api_key_dialog
     import ui.app
     import ui.conversion
     import ui.dashboard
@@ -74,7 +75,10 @@ def test_ui_modules_import(gui_stubs) -> None:
     assert callable(ui.app.Py2CardputerApp.cancel_conversion)
     assert callable(ui.app.Py2CardputerApp.check_openhands)
     assert callable(ui.app.Py2CardputerApp.save_settings)
+    assert callable(ui.app.Py2CardputerApp.save_api_key)
+    assert callable(ui.app.Py2CardputerApp.show_api_key_dialog)
     assert callable(ui.app.Py2CardputerApp.notify)
+    assert callable(ui.api_key_dialog.ApiKeyDialog)
     assert hasattr(ui.app.Py2CardputerApp, "clear_api_key")
     assert ui.theme.COLORS["bg"].startswith("#")
     assert set(ui.theme.PAGE_TITLES) == {"dashboard", "conversion", "history", "settings", "about"}
@@ -100,3 +104,50 @@ def test_pages_expose_expected_hooks(gui_stubs) -> None:
     assert callable(ui.conversion.ConversionPage.on_job_finished)
     assert callable(ui.history.HistoryPage.refresh)
     assert callable(ui.settings.SettingsPage.save)
+    assert callable(ui.settings.SettingsPage._save_key)
+
+
+def test_app_save_api_key_validates_and_updates_state(gui_stubs) -> None:
+    import ui.app
+
+    class FakeConfig:
+        def __init__(self) -> None:
+            self.openhands_api_key = ""
+            self.saved = ""
+
+        def save_api_key(self, value: str) -> None:
+            self.saved = value
+            self.openhands_api_key = value
+
+    class FakeLogger:
+        def info(self, *_args) -> None:
+            pass
+
+    app = object.__new__(ui.app.Py2CardputerApp)
+    app.config = FakeConfig()
+    app.logger = FakeLogger()
+    app.settings = types.SimpleNamespace(reload_calls=0)
+    app.dashboard = types.SimpleNamespace(changed_calls=0)
+
+    def reload() -> None:
+        app.settings.reload_calls += 1
+
+    def changed() -> None:
+        app.dashboard.changed_calls += 1
+
+    app.settings.reload = reload
+    app.dashboard.on_api_key_changed = changed
+
+    ok, message = app.save_api_key("  test-key-12345  ")
+    assert ok is True
+    assert app.config.saved == "test-key-12345"
+    assert "never committed" in message
+    assert app.settings.reload_calls == 1
+    assert app.dashboard.changed_calls == 1
+
+    ok, _ = app.save_api_key("short")
+    assert ok is False
+    ok, _ = app.save_api_key("has a space")
+    assert ok is False
+    ok, _ = app.save_api_key("")
+    assert ok is False

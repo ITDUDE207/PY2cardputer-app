@@ -25,6 +25,7 @@ from core.notifications import Notifier
 from core.pipeline import ConversionPipeline
 from github.repository import GitHubRepository
 from ui.about import AboutPage
+from ui.api_key_dialog import ApiKeyDialog
 from ui.conversion import ConversionPage
 from ui.dashboard import DashboardPage
 from ui.history import HistoryPage
@@ -267,7 +268,8 @@ class Py2CardputerApp(ctk.CTk):
         if not self.config.openhands_api_key:
             messagebox.showerror(
                 "OpenHands API key missing",
-                "Add your OpenHands API key in Settings. It is stored in .env and never committed.",
+                "Click Save API key on the Dashboard or Settings page. The key is stored "
+                "only in the local .env file and is never committed to GitHub.",
             )
             self.show_page("settings")
             return
@@ -441,10 +443,13 @@ class Py2CardputerApp(ctk.CTk):
         try:
             config.save()
             api_key = values.get("openhands_api_key", "").strip()
-            if api_key:
-                config.save_api_key(api_key)
         except OSError as exc:
             return [f"Could not save settings: {exc}"]
+
+        if api_key:
+            saved, message = self.save_api_key(api_key)
+            if not saved:
+                return [message]
 
         self.job_store = JobStore(config.build_path, self.logger, log_dir=config.log_path)
         self.notifier.configure(
@@ -453,6 +458,32 @@ class Py2CardputerApp(ctk.CTk):
         )
         return []
 
+    def save_api_key(self, value: str) -> tuple[bool, str]:
+        """Validate and store an API key in the local ``.env`` file."""
+        key = value.strip()
+        if not key:
+            return False, "Enter an OpenHands API key first."
+        if len(key) < 8:
+            return False, "That API key looks too short."
+        if any(character.isspace() for character in key) or any(
+            character in key for character in ("\r", "\n", "\x00")
+        ):
+            return False, "The API key must not contain spaces or line breaks."
+        try:
+            self.config.save_api_key(key)
+        except OSError as exc:
+            return False, f"Could not save the API key to .env: {exc}"
+        self.logger.info("Stored OpenHands API key in .env")
+        if hasattr(self, "settings"):
+            self.settings.reload()
+        if hasattr(self, "dashboard"):
+            self.dashboard.on_api_key_changed()
+        return True, "API key saved to .env. It is never committed to GitHub."
+
+    def show_api_key_dialog(self) -> None:
+        """Open the in-app API key dialog."""
+        ApiKeyDialog(self)
+
     def clear_api_key(self) -> bool:
         try:
             self.config.save_api_key("")
@@ -460,6 +491,10 @@ class Py2CardputerApp(ctk.CTk):
             messagebox.showerror("Py2Cardputer", f"Could not update .env: {exc}")
             return False
         self.logger.info("Stored OpenHands API key was removed from .env")
+        if hasattr(self, "settings"):
+            self.settings.reload()
+        if hasattr(self, "dashboard"):
+            self.dashboard.on_api_key_changed()
         return True
 
     # ------------------------------------------------------------------ system

@@ -60,7 +60,8 @@ class SettingsPage(ctk.CTkFrame):
         card = SectionCard(
             self.scroll,
             "OpenHands Cloud",
-            "The API key is stored in .env (git-ignored) and is never written to config.json or logs.",
+            "The API key is stored only in .env (git-ignored) and is never written to "
+            "config.json, logs, GitHub or a pull request.",
         )
         card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         body = card.body
@@ -78,13 +79,22 @@ class SettingsPage(ctk.CTkFrame):
             wraplength=780,
         )
         self.key_state_label.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        key_actions = ctk.CTkFrame(body, fg_color="transparent")
+        key_actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         ctk.CTkButton(
-            body,
+            key_actions,
+            text="Save API key",
+            command=self._save_key,
+            width=150,
+            **primary_button_options(),
+        ).pack(side="left")
+        ctk.CTkButton(
+            key_actions,
             text="Remove stored API key",
             command=self._clear_key,
             width=170,
             **secondary_button_options(),
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).pack(side="left", padx=(8, 0))
 
     def _build_github_card(self) -> None:
         card = SectionCard(
@@ -293,6 +303,18 @@ class SettingsPage(ctk.CTkFrame):
         self.reload()
         self._set_status("Settings saved. Secrets go to .env, everything else to config.json.", "success")
         return True
+
+    def _save_key(self) -> None:
+        value = self.entries["openhands_api_key"].get().strip()
+        if not value:
+            self._set_status("Enter an API key first, or use Save settings to keep the stored key.", "error")
+            return
+        ok, message = self.app.save_api_key(value)
+        if not ok:
+            self._set_status(message, "error")
+            return
+        self.reload()
+        self._set_status(message, "success")
 
     def _clear_key(self) -> None:
         if not messagebox.askyesno(

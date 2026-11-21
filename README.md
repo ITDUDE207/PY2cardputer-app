@@ -157,8 +157,20 @@ In OpenHands Cloud, connect GitHub under **Settings -> Integrations** and make
 sure the workspace repository is accessible to the OpenHands installation.
 Without that access, the conversation starts but cannot read the branch.
 
-`.env` is git-ignored. The API key is never written to `config.json`, logs or the
-GUI. The Settings page writes it only to `.env`.
+`.env` is git-ignored. The full API key is never written to `config.json`, logs,
+GUI output, the GitHub repository or a pull request.
+
+You can also save the key without editing `.env` by hand:
+
+1. Open **Dashboard** and click **Save API key**, or open **Settings** and use
+   the **Save API key** button in the OpenHands card.
+2. Paste the key and click **Save API key**. The dialog writes only to the local
+   `.env` file and then tests the OpenHands connection.
+3. Use **Update API key** later to replace it, or **Remove stored API key** in
+   Settings to clear it.
+
+The key is never sent to GitHub by Py2Cardputer, so it cannot appear in a pull
+request.
 
 ### 6. Run
 
@@ -173,7 +185,8 @@ python main.py
 ### Dashboard
 
 Shows OpenHands, GitHub and Arduino CLI status, plus the most recent build and
-its binary path. Use **Refresh status** after changing credentials or tooling.
+its binary path. Use **Save API key** to store the OpenHands key locally, and
+**Refresh status** after changing credentials or tooling.
 
 ### New Conversion
 
@@ -218,7 +231,7 @@ builds remain until you delete them manually.
 
 | Setting | Stored in |
 | --- | --- |
-| OpenHands API key | `.env` only |
+| OpenHands API key | Saved in-app to `.env` only |
 | OpenHands API URL | `config.json` |
 | GitHub repository | `config.json` |
 | Arduino CLI path | `config.json` |
@@ -370,6 +383,7 @@ Py2Cardputer/
         history.py              # previous builds and artifacts
         settings.py             # editable configuration
         about.py                # workflow, guarantees, documentation links
+        api_key_dialog.py       # in-app API key save dialog
         theme.py                # colors, fonts, widget options
         widgets.py              # shared cards, step list, terminal
 
@@ -407,8 +421,9 @@ Py2Cardputer/
 
 ## Security and reliability
 
-- The API key comes from `.env` or the process environment only. It is never
-  written to `config.json`, logs, build metadata or GUI output.
+- The API key is saved from Dashboard/Settings directly to `.env`, or comes from
+  the process environment. It is never written to `config.json`, logs, build
+  metadata, the GitHub repository, a pull request or full GUI output.
 - Logs pass through a redacting filter that also catches bearer headers and
   common token formats.
 - Uploaded Python is read, hashed and parsed with `ast`; it is never executed.
@@ -433,12 +448,12 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-The suite covers configuration, filename and branch sanitisation, single-file,
-folder and ZIP source validation, notification formatting and Windows toast
-launching, Arduino CLI detection/compilation, sketch validation, OpenHands
-request/error handling, task monitoring, job persistence, prompt content, the
-full pipeline with injected fakes, and a real-git round trip against a local
-bare repository. No credentials are required.
+The suite covers configuration, in-app API key validation, filename and branch
+sanitisation, single-file, folder and ZIP source validation, notification
+formatting and Windows toast launching, Arduino CLI detection/compilation,
+sketch validation, OpenHands request/error handling, task monitoring, job
+persistence, prompt content, the full pipeline with injected fakes, and a
+real-git round trip against a local bare repository. No credentials are required.
 
 ---
 
@@ -446,7 +461,7 @@ bare repository. No credentials are required.
 
 Verified while building this version:
 
-- 203 unit and integration tests pass without credentials.
+- 204 unit and integration tests pass without credentials.
 - All modules compile and import.
 - GitHub authentication and cloning against the configured workspace repository
   were exercised successfully.
