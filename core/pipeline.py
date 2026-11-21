@@ -29,7 +29,7 @@ from core.models import (
     StepRecord,
     StepStatus,
 )
-from core.validation import SourceFile, validate_python_source_file
+from core.validation import SourceFile, validate_python_source_file, validate_source_input
 from github.branches import build_branch_name, unique_branch_name
 from github.downloader import FirmwareDownloader
 from github.repository import GitHubRepository
@@ -177,10 +177,11 @@ class ConversionPipeline:
     # ------------------------------------------------------------------- job
     def create_job(self, source_path: Path | str) -> Job:
         """Validate a source file and allocate a job with a provisional branch."""
-        source = validate_python_source_file(source_path)
+        source = validate_source_input(source_path)
         self.config.require_repository()
+        branch_source = source.filename if source.kind == "file" else source.app_name
         branch = build_branch_name(
-            source.filename,
+            branch_source,
             prefix=self.config.github_branch_prefix,
         )
         job = self.job_store.create_job(
@@ -260,13 +261,21 @@ class ConversionPipeline:
     def _step_validate_source(self, job: Job) -> str:
         path = job.source_snapshot_path or job.source_path
         source: SourceFile = validate_python_source_file(path)
-        job.source_sha256 = source.sha256
-        job.app_name = source.app_name
+        if not job.source_sha256:
+            job.source_sha256 = source.sha256
+        if not job.app_name:
+            job.app_name = source.app_name
         warnings = list(source.inspection.warnings)
         job.warnings.extend(warning for warning in warnings if warning not in job.warnings)
         for warning in warnings:
             self._emit("validate_source", warning, "warning")
-        return f"{source.filename}: {source.size_bytes} bytes, {source.inspection.line_count} lines"
+        file_count = len(job.source_files) or 1
+        if job.source_kind == "file":
+            return f"{source.filename}: {source.size_bytes} bytes, {source.inspection.line_count} lines"
+        return (
+            f"{job.source_filename}: {file_count} file(s), "
+            f"{job.source_sha256[:12]}…, primary {job.source_primary or job.source_filename}"
+        )
 
     def _step_github_auth(self) -> str:
         auth = self.components.repository.check_auth()
@@ -286,24 +295,35 @@ class ConversionPipeline:
         return f"Branch {job.branch} created"
 
     def _step_upload_source(self, job: Job) -> str:
-        source_path = Path(job.source_snapshot_path or job.source_path)
-        relative = f"input/{job.source_filename}"
+        snapshot_dir = Path(job.source_snapshot_dir or Path(job.source_snapshot_path or job.source_path).parent)
+        relative_files = list(job.source_files) or [job.source_filename]
+        uploads: dict[str, Path] = {}
+        for relative in relative_files:
+            source_path = snapshot_dir.joinpath(*relative.split("/"))
+            if not source_path.is_file():
+                raise PipelineError(
+                    "upload_source",
+                    f"Source snapshot is missing {relative!r}.",
+                )
+            uploads[f"input/{relative}"] = source_path
         sha = self.components.repository.commit_and_push(
             job.branch,
-            {relative: source_path},
+            uploads,
             message=(
-                f"Add {job.source_filename} for conversion\n\n"
+                f"Add {len(uploads)} input file(s) for conversion\n\n"
                 f"Job: {job.job_id}\nApp: {job.app_name}"
             ),
         )
         job.commit_sha = sha
-        return f"Pushed {relative} to {job.branch} ({sha[:8]})"
+        return f"Pushed {len(uploads)} input file(s) to {job.branch} ({sha[:8]})"
 
     def _step_start_conversation(self, job: Job) -> str:
         source = validate_python_source_file(job.source_snapshot_path or job.source_path)
         prompt = build_conversion_prompt(
             app_name=job.app_name,
             source_filename=job.source_filename,
+            source_relative=job.source_primary or job.source_filename,
+            input_files=job.source_files,
             repository=job.repository,
             branch=job.branch,
             job_id=job.job_id,

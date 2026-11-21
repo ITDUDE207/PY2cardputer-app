@@ -60,7 +60,8 @@ class SettingsPage(ctk.CTkFrame):
         card = SectionCard(
             self.scroll,
             "OpenHands Cloud",
-            "The API key is stored in .env (git-ignored) and is never written to config.json or logs.",
+            "The API key is stored only in .env (git-ignored) and is never written to "
+            "config.json, logs, GitHub or a pull request.",
         )
         card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         body = card.body
@@ -78,13 +79,22 @@ class SettingsPage(ctk.CTkFrame):
             wraplength=780,
         )
         self.key_state_label.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        key_actions = ctk.CTkFrame(body, fg_color="transparent")
+        key_actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         ctk.CTkButton(
-            body,
+            key_actions,
+            text="Save API key",
+            command=self._save_key,
+            width=150,
+            **primary_button_options(),
+        ).pack(side="left")
+        ctk.CTkButton(
+            key_actions,
             text="Remove stored API key",
             command=self._clear_key,
             width=170,
             **secondary_button_options(),
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).pack(side="left", padx=(8, 0))
 
     def _build_github_card(self) -> None:
         card = SectionCard(
@@ -118,6 +128,30 @@ class SettingsPage(ctk.CTkFrame):
         self._field(body, 1, "Polling interval", "poll_interval_seconds", placeholder="5")
         self._field(body, 2, "Startup timeout", "startup_timeout_seconds", placeholder="900")
         self._field(body, 3, "Execution timeout", "execution_timeout_seconds", placeholder="5400")
+        self.notifications_var = ctk.BooleanVar(value=True)
+        self.native_notifications_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            body,
+            text="Show notifications when a build finishes",
+            variable=self.notifications_var,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text"],
+            font=font(12),
+            border_color=COLORS["border"],
+            checkmark_color=COLORS["bg"],
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 2))
+        ctk.CTkCheckBox(
+            body,
+            text="Try native Windows toast (best effort; in-app banner always appears)",
+            variable=self.native_notifications_var,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_muted"],
+            font=font(11),
+            border_color=COLORS["border"],
+            checkmark_color=COLORS["bg"],
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     def _build_actions(self) -> None:
         card = ctk.CTkFrame(self.scroll, fg_color="transparent")
@@ -214,6 +248,8 @@ class SettingsPage(ctk.CTkFrame):
             "startup_timeout_seconds": _number(config.startup_timeout_seconds),
             "execution_timeout_seconds": _number(config.execution_timeout_seconds),
         }
+        self.notifications_var.set(bool(config.notifications_enabled))
+        self.native_notifications_var.set(bool(config.native_notifications))
         for key, entry in self.entries.items():
             entry.delete(0, "end")
             value = values.get(key, "")
@@ -236,8 +272,13 @@ class SettingsPage(ctk.CTkFrame):
             )
         )
 
-    def _values(self) -> dict[str, str]:
-        return {key: entry.get().strip() for key, entry in self.entries.items()}
+    def _values(self) -> dict[str, object]:
+        values: dict[str, object] = {
+            key: entry.get().strip() for key, entry in self.entries.items()
+        }
+        values["notifications_enabled"] = bool(self.notifications_var.get())
+        values["native_notifications"] = bool(self.native_notifications_var.get())
+        return values
 
     # ---------------------------------------------------------------- actions
     def save(self, silent: bool = False) -> bool:
@@ -262,6 +303,18 @@ class SettingsPage(ctk.CTkFrame):
         self.reload()
         self._set_status("Settings saved. Secrets go to .env, everything else to config.json.", "success")
         return True
+
+    def _save_key(self) -> None:
+        value = self.entries["openhands_api_key"].get().strip()
+        if not value:
+            self._set_status("Enter an API key first, or use Save settings to keep the stored key.", "error")
+            return
+        ok, message = self.app.save_api_key(value)
+        if not ok:
+            self._set_status(message, "error")
+            return
+        self.reload()
+        self._set_status(message, "success")
 
     def _clear_key(self) -> None:
         if not messagebox.askyesno(

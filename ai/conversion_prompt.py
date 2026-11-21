@@ -68,9 +68,12 @@ def build_conversion_prompt(
     branch: str,
     job_id: str | None = None,
     inspection: SourceInspection | None = None,
+    source_relative: str | None = None,
+    input_files: list[str] | None = None,
 ) -> str:
     """Compose the full prompt, including repository context for the agent."""
-    input_path = f"input/{source_filename}"
+    relative = source_relative or source_filename
+    input_path = f"input/{relative}"
     lines = [
         CONVERSION_INSTRUCTIONS,
         "",
@@ -84,6 +87,13 @@ def build_conversion_prompt(
         f"- Required sketch folder: firmware/{app_name}/",
         f"- Required sketch file: firmware/{app_name}/{app_name}.ino",
     ]
+    if input_files:
+        shown = input_files[:40]
+        lines.append(f"- Input bundle: {len(input_files)} file(s) under `input/`")
+        for name in shown:
+            lines.append(f"  - `input/{name}`")
+        if len(input_files) > len(shown):
+            lines.append(f"  - …and {len(input_files) - len(shown)} more file(s)")
     if job_id:
         lines.append(f"- Py2Cardputer job id: {job_id}")
     if inspection and inspection.imports:
@@ -95,18 +105,26 @@ def build_conversion_prompt(
         "",
         "Working rules:",
         "",
-        f"1. Read the complete Python file at `{input_path}` in this repository before writing code.",
+        f"1. Read the complete Python file at `{input_path}` in this repository before writing code."
+        + (
+            " Read every Python file in the input bundle, not only the primary file."
+            if input_files and len(input_files) > 1
+            else ""
+        ),
         f"2. Create the sketch at `firmware/{app_name}/{app_name}.ino` and keep the folder name "
         "identical to the .ino file name.",
         f"3. Write `firmware/{app_name}/README.md` and "
         f"`firmware/{app_name}/CONVERSION_REPORT.md` as described above.",
         f"4. Commit all generated files to the current branch `{branch}` and push that branch. "
         "Do not open, merge or target a pull request against main.",
-        "5. Do not modify or delete the original file in `input/`.",
+        "5. Do not modify or delete the original files in `input/`.",
         "6. Do not compile the firmware, do not flash hardware, and do not state that it was "
         "compiled or tested. Compilation happens on the user's machine after this task.",
         "7. If a feature cannot be reproduced with the available Arduino APIs, keep the sketch "
         "complete and document the gap in CONVERSION_REPORT.md instead of leaving stubs.",
+        "8. If the input bundle contains images, fonts, JSON or other assets, copy the required "
+        f"files into `firmware/{app_name}/data/` and update the sketch to use those paths. "
+        "Document any asset that cannot be used.",
         "",
         "Finish by reporting which files you created and the branch you pushed to.",
     ]

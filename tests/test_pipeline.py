@@ -368,3 +368,59 @@ def test_missing_api_key_fails_fast(tmp_path: Path) -> None:
     assert finished.status is JobStatus.FAILED
     assert "OPENHANDS_API_KEY" in (finished.error or "")
     assert components.repository.created is None
+
+
+def test_folder_bundle_uploads_assets_and_prompts_with_bundle(tmp_path: Path) -> None:
+    project = tmp_path / "MyApp"
+    project.mkdir()
+    (project / "main.py").write_text(SOURCE, encoding="utf-8")
+    assets = project / "assets"
+    assets.mkdir()
+    (assets / "logo.txt").write_text("logo", encoding="utf-8")
+
+    config = Config(
+        root=tmp_path,
+        openhands_api_key="test-key",
+        github_repository="owner/repo",
+        build_dir="builds",
+        log_dir="logs",
+        workspace_dir="workspace",
+    )
+    config.ensure_directories()
+    logger = logging.getLogger(f"test.pipeline.bundle.{tmp_path.name}")
+    logger.handlers.clear()
+    logger.propagate = False
+    store = JobStore(tmp_path / "builds", logger, log_dir=tmp_path / "logs")
+    openhands = FakeOpenHands()
+    components = Components(
+        openhands=openhands,
+        repository=FakeRepository(),
+        arduino=FakeArduino(),
+        downloader=FakeDownloader(),
+    )
+    pipeline = ConversionPipeline(
+        config,
+        store,
+        logger,
+        components=components,
+        monitor=success_monitor(),
+    )
+
+    job = pipeline.create_job(project)
+    finished = pipeline.run(job)
+
+    assert finished.status is JobStatus.SUCCEEDED
+    assert finished.source_kind == "folder"
+    assert finished.app_name == "MyApp"
+    assert components.repository.uploaded is not None
+    assert set(components.repository.uploaded) == {
+        "input/main.py",
+        "input/assets/logo.txt",
+    }
+    assert all(path.is_file() for path in components.repository.uploaded.values())
+    assert openhands.kwargs is not None
+    prompt = openhands.kwargs["prompt"]
+    assert "input/main.py" in prompt
+    assert "input/assets/logo.txt" in prompt
+    assert "Input bundle: 2 file(s)" in prompt
+    assert "firmware/MyApp/data/" in prompt

@@ -2,10 +2,10 @@
 
 ## Purpose
 
-Desktop tool (CustomTkinter) that converts UIFlow 2.0 MicroPython `.py` apps
-into Arduino firmware for the M5Stack Cardputer ADV. Conversion runs in
-OpenHands Cloud V1 against a GitHub branch; compilation runs locally with
-Arduino CLI.
+Desktop tool (CustomTkinter) that converts UIFlow 2.0 MicroPython apps into
+Arduino firmware for the M5Stack Cardputer ADV. Inputs may be one `.py` file, a
+project folder or a `.zip` archive. Conversion runs in OpenHands Cloud V1
+against a GitHub branch; compilation runs locally with Arduino CLI.
 
 ## Commands
 
@@ -20,11 +20,13 @@ python -m compileall -q .              # syntax check
 
 ## Architecture
 
-- `core/` owns config, models, validation, job persistence, logging and the
-  pipeline. Apart from `core/pipeline.py`, it must not import `ui`, `ai`,
-  `github` or `compiler`.
+- `core/` owns config, models, validation, job persistence, logging,
+  notifications and the pipeline. Apart from `core/pipeline.py`, it must not
+  import `ui`, `ai`, `github` or `compiler`.
 - `ai/`, `github/` and `compiler/` are service adapters. They raise typed errors
   from `core/errors.py` and never print to stdout.
+- `ui/api_key_dialog.py` is the only in-app API key entry point; it calls
+  `Py2CardputerApp.save_api_key`, which writes only to `.env`.
 - `ui/` only renders state and submits work; all network/Git/compiler work runs
   on `ThreadPoolExecutor` and reports through a `queue.Queue` drained by
   `after()`.
@@ -36,9 +38,13 @@ python -m compileall -q .              # syntax check
 - Never delete branches, files or repositories automatically; never merge to
   `main`; never push conversion output to `main`.
 - Never execute uploaded Python. Read, hash and `ast.parse` only.
-- API key comes from `.env`/environment. Never write it to `config.json`, logs,
-  job metadata or GUI output. `core.logger.register_secret` + `redact` protect
-  logs.
+- Folder/ZIP inputs become an in-memory bundle. ZIPs are never extracted; reject
+  traversal, drive/stream paths, symlinks, encryption and oversized archives.
+  Dotfiles and cache/VCS directories are excluded.
+- API key comes from `.env`/environment or the in-app Dashboard/Settings save
+  dialog. Never write it to `config.json`, logs, job metadata, GitHub or a pull
+  request; the full key must not appear in GUI output. `core.logger.register_secret`
+  + `redact` protect logs.
 - New jobs must never overwrite an existing build directory.
 - Keep the GUI thread free; no blocking calls in widget callbacks.
 
@@ -49,10 +55,12 @@ from `OPENHANDS_API_KEY`. `config.json` is safe to commit; `.env` is ignored.
 
 ## Tests and environment limits
 
-- 186 tests, including a real-git round trip against a local bare repo
+- 204 tests, including a real-git round trip against a local bare repo
   (`tests/test_git_integration.py`), skipped if git is absent.
 - `tests/test_ui_imports.py` stubs `tkinter`/`customtkinter`; Tk rendering cannot
   be tested headlessly.
+- Native Windows toasts use PowerShell and are best-effort; the in-app banner is
+  the reliable path. Notification tests inject the platform and process launcher.
 - Unit tests never need credentials. A one-off live OpenHands + Arduino CLI
   smoke test was run manually; do not describe it as part of the automated
   suite, and do not start more live conversations without consent.

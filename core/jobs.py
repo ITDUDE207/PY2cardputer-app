@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import logging
 import secrets
-import shutil
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from core.errors import Py2CardputerError
 from core.models import Job, JobStatus, iso_now
@@ -67,8 +66,38 @@ class JobStore:
 
         snapshot_dir = directory / "source"
         snapshot_dir.mkdir()
-        snapshot = snapshot_dir / source.filename
-        shutil.copyfile(source.path, snapshot)
+        bundle = source.bundle or {
+            source.filename: Path(source.path).read_bytes()
+        }
+        for relative, data in bundle.items():
+            raw = str(relative)
+            bundle_path = PurePosixPath(raw)
+            if (
+                "\\" in raw
+                or ":" in raw
+                or bundle_path.is_absolute()
+                or any(part in {"", ".", ".."} for part in bundle_path.parts)
+            ):
+                raise Py2CardputerError(f"Unsafe source path: {relative!r}")
+            target = snapshot_dir.joinpath(*bundle_path.parts)
+            if not target.resolve().is_relative_to(snapshot_dir.resolve()):
+                raise Py2CardputerError(f"Unsafe source path: {relative!r}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        primary = source.primary_relative or source.filename
+        primary_path = PurePosixPath(str(primary))
+        if (
+            "\\" in str(primary)
+            or ":" in str(primary)
+            or primary_path.is_absolute()
+            or any(part in {"", ".", ".."} for part in primary_path.parts)
+        ):
+            raise Py2CardputerError(f"Unsafe primary source path: {primary!r}")
+        snapshot = snapshot_dir.joinpath(*primary_path.parts)
+        if not snapshot.resolve().is_relative_to(snapshot_dir.resolve()):
+            raise Py2CardputerError(f"Unsafe primary source path: {primary!r}")
+        if not snapshot.is_file():
+            raise Py2CardputerError(f"Source snapshot is missing its primary file: {primary}")
 
         resolved_log_path = log_path
         if resolved_log_path is None and self.log_dir is not None:
@@ -81,8 +110,13 @@ class JobStore:
             source_filename=source.filename,
             source_path=str(source.path),
             source_snapshot_path=str(snapshot),
+            source_kind=source.kind,
+            source_snapshot_dir=str(snapshot_dir),
+            source_primary=primary,
+            source_files=sorted(bundle),
             source_sha256=source.sha256,
             app_name=name,
+            warnings=list(source.inspection.warnings),
             repository=repository,
             branch=branch,
             job_dir=str(directory),
@@ -90,7 +124,13 @@ class JobStore:
             status=JobStatus.PENDING,
         )
         self.save(job)
-        self.logger.info("Created job %s for %s", job.job_id, source.filename)
+        self.logger.info(
+            "Created job %s for %s (%s, %d file(s))",
+            job.job_id,
+            source.filename,
+            source.kind,
+            len(bundle),
+        )
         return job
 
     def save(self, job: Job) -> Path:

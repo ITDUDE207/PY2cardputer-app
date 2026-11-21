@@ -102,35 +102,78 @@ class DashboardPage(ctk.CTkFrame):
         buttons.grid(row=1, column=0, sticky="w", pady=(14, 0))
         ctk.CTkButton(
             buttons,
-            text="Upload Python File",
+            text="Upload File or ZIP",
             command=lambda: self.app.conversion_page.choose_file(),
             **primary_button_options(),
         ).pack(side="left")
         ctk.CTkButton(
             buttons,
+            text="Select Folder",
+            command=lambda: self.app.conversion_page.choose_folder(),
+            **secondary_button_options(),
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            buttons,
             text="Refresh status",
             command=self.refresh,
             **secondary_button_options(),
-        ).pack(side="left", padx=8)
+        ).pack(side="left")
         ctk.CTkButton(
             buttons,
             text="Settings",
             command=lambda: self.app.show_page("settings"),
             **secondary_button_options(),
         ).pack(side="left")
+        self.api_key_button = ctk.CTkButton(
+            buttons,
+            text="Save API key",
+            command=self.app.show_api_key_dialog,
+            **secondary_button_options(),
+        )
+        self.api_key_button.pack(side="left", padx=(8, 0))
 
     # ------------------------------------------------------------------ state
     def on_show(self) -> None:
         self.refresh()
 
     def refresh(self) -> None:
-        self.openhands_card.set_status("unknown", "Checking…", self.app.config.openhands_api_url)
+        self._update_api_key_button()
+        if self.app.config.openhands_api_key:
+            self.openhands_card.set_status("unknown", "Checking…", self.app.config.openhands_api_url)
+            self.app.check_openhands(self._apply_openhands)
+        else:
+            self.openhands_card.set_status(
+                "error",
+                "API key needed",
+                "Use Save API key to store it locally in .env.",
+            )
         self.github_card.set_status("unknown", "Checking…", self.app.config.github_repository)
         self.arduino_card.set_status("unknown", "Checking…", self.app.config.arduino_cli_path)
-        self.app.check_openhands(self._apply_openhands)
         self.app.check_github(self._apply_github)
         self.app.check_arduino(self._apply_arduino)
         self.refresh_last_build()
+
+    def on_api_key_changed(self) -> None:
+        """Refresh the key action and re-test OpenHands after saving or clearing."""
+        self._update_api_key_button()
+        if self.app.config.openhands_api_key:
+            self.openhands_card.set_status(
+                "unknown",
+                "Checking…",
+                "Testing the saved API key…",
+            )
+            self.app.check_openhands(self._apply_openhands)
+        else:
+            self.openhands_card.set_status(
+                "error",
+                "API key needed",
+                "Use Save API key to store it locally in .env.",
+            )
+
+    def _update_api_key_button(self) -> None:
+        self.api_key_button.configure(
+            text="Update API key" if self.app.config.openhands_api_key else "Save API key"
+        )
 
     def _apply_openhands(self, result) -> None:
         if isinstance(result, Exception):

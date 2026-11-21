@@ -5,7 +5,7 @@ from pathlib import Path
 
 from core.jobs import JobStore, new_job_id
 from core.models import JobStatus
-from core.validation import validate_python_source_file
+from core.validation import validate_python_source_file, validate_source_input
 
 SOURCE = """\
 import time
@@ -109,3 +109,46 @@ def test_job_json_has_no_secret(tmp_path: Path) -> None:
     job = store.create_job(source, repository="o/r", branch="py2cardputer/a")
     data = json.loads((Path(job.job_dir) / "job.json").read_text(encoding="utf-8"))
     assert "api_key" not in json.dumps(data).lower()
+
+
+def test_create_job_snapshots_folder_bundle(tmp_path: Path) -> None:
+    project = tmp_path / "MyProject"
+    project.mkdir()
+    (project / "main.py").write_text(SOURCE, encoding="utf-8")
+    assets = project / "assets"
+    assets.mkdir()
+    (assets / "logo.txt").write_text("logo", encoding="utf-8")
+
+    source = validate_source_input(project)
+    store = make_store(tmp_path)
+    job = store.create_job(source, repository="owner/repo", branch="py2cardputer/project")
+
+    snapshot_dir = Path(job.source_snapshot_dir)
+    assert job.source_kind == "folder"
+    assert job.source_primary == "main.py"
+    assert job.source_files == ["assets/logo.txt", "main.py"]
+    assert (snapshot_dir / "main.py").read_text(encoding="utf-8") == SOURCE
+    assert (snapshot_dir / "assets" / "logo.txt").read_text(encoding="utf-8") == "logo"
+    assert Path(job.source_snapshot_path) == snapshot_dir / "main.py"
+    assert (project / "main.py").read_text(encoding="utf-8") == SOURCE
+
+
+def test_create_job_snapshots_zip_bundle(tmp_path: Path) -> None:
+    import zipfile
+
+    archive = tmp_path / "MyZipApp.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("src/main.py", SOURCE)
+        bundle.writestr("src/assets/logo.txt", "logo")
+
+    source = validate_source_input(archive)
+    store = make_store(tmp_path)
+    job = store.create_job(source, repository="owner/repo", branch="py2cardputer/zip")
+
+    snapshot_dir = Path(job.source_snapshot_dir)
+    assert job.source_kind == "zip"
+    assert job.source_primary == "src/main.py"
+    assert job.source_files == ["src/assets/logo.txt", "src/main.py"]
+    assert (snapshot_dir / "src" / "main.py").read_text(encoding="utf-8") == SOURCE
+    assert (snapshot_dir / "src" / "assets" / "logo.txt").read_text(encoding="utf-8") == "logo"
+    assert archive.is_file()
