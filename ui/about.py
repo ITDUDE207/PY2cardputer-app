@@ -48,15 +48,16 @@ class AboutPage(ctk.CTkFrame):
         ctk.CTkLabel(
             workflow.body,
             text=(
-                "1.  Validate the selected .py file (read-only, never executed).\n"
+                "1.  Validate the selected .py file, folder or ZIP (read-only, never executed).\n"
                 "2.  Clone the workspace repository using local git authentication.\n"
                 "3.  Create a unique branch such as py2cardputer/20261121-150000-myapp.\n"
-                "4.  Commit the original file to input/ on that branch.\n"
+                "4.  Commit the input bundle to input/ on that branch.\n"
                 "5.  Start an OpenHands Cloud V1 conversation bound to the branch.\n"
                 "6.  Poll the start task, then the conversation, until it finishes.\n"
                 "7.  Fetch firmware/AppName/ from the branch.\n"
                 "8.  Validate the sketch structure and compile it locally.\n"
-                "9.  Keep the branch, source, logs and binary for later inspection."
+                "9.  Keep the branch, source, logs and binary for later inspection.\n"
+                "10. Show an in-app notification and attempt a native Windows toast."
             ),
             font=font(12),
             text_color=COLORS["text_muted"],

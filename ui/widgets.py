@@ -348,3 +348,71 @@ class JobRow(ctk.CTkFrame):
         )
         subtitle.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
         subtitle.bind("<Button-1>", lambda _event: command(job))
+
+
+class NotificationBanner(ctk.CTkFrame):
+    """Transient in-app notification anchored to the top-right of the window."""
+
+    def __init__(self, master: ctk.CTkBaseClass) -> None:
+        super().__init__(
+            master,
+            fg_color=COLORS["surface_alt"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.grid_columnconfigure(1, weight=1)
+        self._after_id: str | None = None
+        self.dot = ctk.CTkLabel(self, text="●", font=font(13, "bold"))
+        self.dot.grid(row=0, column=0, rowspan=2, sticky="nw", padx=(14, 8), pady=(12, 0))
+        self.title_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=font(12, "bold"),
+            text_color=COLORS["text"],
+            anchor="w",
+        )
+        self.title_label.grid(row=0, column=1, sticky="ew", pady=(10, 0))
+        self.message_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=font(11),
+            text_color=COLORS["text_muted"],
+            anchor="w",
+            justify="left",
+            wraplength=320,
+        )
+        self.message_label.grid(row=1, column=1, sticky="ew", pady=(2, 10))
+        close_options = secondary_button_options()
+        close_options.update({"width": 26, "height": 22})
+        ctk.CTkButton(
+            self,
+            text="×",
+            command=self.hide,
+            **close_options,
+        ).grid(row=0, column=2, sticky="ne", padx=(4, 8), pady=(8, 0))
+        self.place_forget()
+
+    def show(
+        self,
+        title: str,
+        message: str,
+        level: str = "info",
+        *,
+        duration_ms: int = 9000,
+    ) -> None:
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+        self.dot.configure(text_color=status_color(level))
+        self.title_label.configure(text=title)
+        self.message_label.configure(text=message)
+        self.place(relx=1.0, x=-24, y=18, anchor="ne")
+        self.lift()
+        self._after_id = self.after(duration_ms, self.hide)
+
+    def hide(self) -> None:
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+        self.place_forget()

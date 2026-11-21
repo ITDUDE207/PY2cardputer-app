@@ -102,16 +102,22 @@ class DashboardPage(ctk.CTkFrame):
         buttons.grid(row=1, column=0, sticky="w", pady=(14, 0))
         ctk.CTkButton(
             buttons,
-            text="Upload Python File",
+            text="Upload File or ZIP",
             command=lambda: self.app.conversion_page.choose_file(),
             **primary_button_options(),
         ).pack(side="left")
         ctk.CTkButton(
             buttons,
+            text="Select Folder",
+            command=lambda: self.app.conversion_page.choose_folder(),
+            **secondary_button_options(),
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            buttons,
             text="Refresh status",
             command=self.refresh,
             **secondary_button_options(),
-        ).pack(side="left", padx=8)
+        ).pack(side="left")
         ctk.CTkButton(
             buttons,
             text="Settings",

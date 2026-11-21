@@ -18,7 +18,7 @@ GitHub workspace repository. Compilation runs locally with **Arduino CLI**.
 ```mermaid
 flowchart LR
     A[CustomTkinter GUI] --> B[Conversion pipeline]
-    B -->|input/App.py| C[GitHub workspace branch]
+    B -->|input/App.py or input/bundle/| C[GitHub workspace branch]
     C --> D[OpenHands Cloud V1]
     D -->|firmware/App/| C
     B -->|download branch| E[builds/job-id]
@@ -28,18 +28,20 @@ flowchart LR
 
 For every conversion Py2Cardputer:
 
-1. Validates the selected `.py` file without executing it.
+1. Validates the selected `.py` file, project folder or `.zip` archive without executing it.
 2. Checks local Git authentication for the workspace repository.
 3. Clones the repository once into `workspace/` and reuses that cache.
 4. Creates a unique branch such as
    `py2cardputer/20261121-150000-myapp`.
-5. Uploads the original source to `input/` and pushes the branch.
+5. Uploads the complete input bundle to `input/` and pushes the branch.
 6. Starts an OpenHands Cloud V1 conversation bound to that repository and branch.
 7. Polls the start task and then the conversation until it finishes.
 8. Fetches `firmware/AppName/` from the branch.
 9. Validates the Arduino sketch structure.
 10. Compiles it locally with Arduino CLI.
 11. Reports the `.bin` path and keeps the branch, source, logs and binary.
+12. Shows an in-app notification and, on Windows, attempts a native toast when the
+    build finishes.
 
 Branches, files and repositories are **never deleted or merged** by
 Py2Cardputer. Cleanup is manual.
@@ -175,13 +177,20 @@ its binary path. Use **Refresh status** after changing credentials or tooling.
 
 ### New Conversion
 
-1. Click **Upload Python File** and choose a UIFlow 2.0 `.py` file.
-2. Review the detected application name, hash and imports.
+1. Click **Upload File or ZIP** to choose a UIFlow 2.0 `.py` file or a `.zip`
+   archive, or click **Select Folder** to choose a project folder.
+2. Review the detected application name, input type, file count, hash and imports.
+   Dotfiles, `.git`, virtual environments and `__pycache__` are excluded.
 3. Pick the board profile (the FQBN is editable in Settings).
 4. Click **Start Conversion**.
 5. Follow the live step list, OpenHands task/conversation IDs, branch and
    compiler output.
 6. On success, open the `.bin` from the result card or the build folder.
+
+For folder and ZIP inputs, every non-ignored file is uploaded under `input/`.
+Python files are parsed with `ast`; assets are passed to OpenHands, which is
+asked to copy required assets into `firmware/AppName/data/`. The original input
+is never modified.
 
 The GUI stays responsive because all network, Git and compiler work runs on a
 background thread; progress is delivered to Tk through a thread-safe queue.
@@ -192,8 +201,10 @@ Every job keeps its own folder:
 
 ```text
 builds/<job-id>/
-    job.json                 # status, IDs, hashes, paths
-    source/app.py            # snapshot of the original source
+    job.json                 # status, IDs, hashes, paths, input file list
+    source/                  # snapshot of the original input
+        app.py               # single-file input
+        assets/...           # folder/ZIP input assets
     firmware/App/            # downloaded generated firmware
     bin/App.ino.bin          # compiled binary
     compile.log              # full compiler stdout/stderr
@@ -214,6 +225,7 @@ builds remain until you delete them manually.
 | Arduino FQBN | `config.json` |
 | Build directory | `config.json` |
 | Poll interval, timeouts | `config.json` |
+| In-app / native notifications | `config.json` |
 
 Environment variables override `config.json`. See `.env.example` for the full
 list. The API key is the only value that is never persisted to JSON.
@@ -226,6 +238,8 @@ list. The API key is the only value that is never persisted to JSON.
 python main.py --check
 python main.py --history
 python main.py --cli --file .\myapp.py
+python main.py --cli --file .\MyProject
+python main.py --cli --file .\MyProject.zip
 python main.py --cli --file .\myapp.py --fqbn m5stack:esp32:m5stack_cardputer
 ```
 
@@ -377,7 +391,8 @@ Py2Cardputer/
         config.py               # config.json + .env loading and saving
         logger.py               # redaction and job log files
         models.py               # job, steps, results, progress events
-        validation.py           # source validation and app naming
+        validation.py           # file/folder/ZIP validation and app naming
+        notifications.py        # in-app/native notification helper
         jobs.py                 # persistent job store
         pipeline.py             # end-to-end conversion pipeline
         errors.py               # typed errors
@@ -398,7 +413,10 @@ Py2Cardputer/
   common token formats.
 - Uploaded Python is read, hashed and parsed with `ast`; it is never executed.
 - Filenames are sanitised before use in branches and paths.
-- Archive extraction rejects path traversal outside the job folder.
+- Folder and ZIP inputs are read into an in-memory bundle. ZIPs are not
+  extracted to disk; path traversal, drive paths, symlinks, encryption and
+  oversized archives are rejected.
+- Dotfiles and common cache/VCS directories are excluded from input bundles.
 - Git runs non-interactively; missing credentials fail fast instead of hanging.
 - All long-running work runs off the Tk main thread.
 - New jobs never overwrite existing build folders.
@@ -415,8 +433,9 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-The suite covers configuration, filename and branch sanitisation, source
-validation, Arduino CLI detection/compilation, sketch validation, OpenHands
+The suite covers configuration, filename and branch sanitisation, single-file,
+folder and ZIP source validation, notification formatting and Windows toast
+launching, Arduino CLI detection/compilation, sketch validation, OpenHands
 request/error handling, task monitoring, job persistence, prompt content, the
 full pipeline with injected fakes, and a real-git round trip against a local
 bare repository. No credentials are required.
@@ -427,7 +446,7 @@ bare repository. No credentials are required.
 
 Verified while building this version:
 
-- 186 unit and integration tests pass without credentials.
+- 203 unit and integration tests pass without credentials.
 - All modules compile and import.
 - GitHub authentication and cloning against the configured workspace repository
   were exercised successfully.
@@ -458,6 +477,12 @@ Not verified in the build environment:
   (`from m5stack import *` / `print("hello")`), not a large app with Wi-Fi,
   sensors, timers and animations. Conversion quality for complex apps depends
   on the OpenHands agent and the generated `CONVERSION_REPORT.md`.
+- **Folder/ZIP conversion**: folder and ZIP input handling, snapshots, uploads
+  and prompts are covered by unit and pipeline tests with fakes. A live
+  OpenHands conversion from a multi-file bundle was not run in this environment.
+- **Native Windows toasts**: the PowerShell toast path is unit-tested with an
+  injected launcher. Toast delivery depends on Windows notification settings and
+  AppUserModelID registration; the in-app banner is always used as a fallback.
 - **Hardware behaviour and flashing**: the binary was not flashed and the
   firmware was not run on a Cardputer. M5Launcher flashing is a manual step.
 - **OpenHands live error paths**: authentication failures, rate limits, sandbox

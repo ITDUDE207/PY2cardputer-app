@@ -17,5 +17,7 @@
   "extra_compile_args": [],
   "board_profiles": {
     "M5Stack Cardputer ADV": "m5stack:esp32:m5stack_cardputer"
-  }
+  },
+  "notifications_enabled": true,
+  "native_notifications": true
 }

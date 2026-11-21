@@ -117,6 +117,10 @@ class Job:
     message: str = ""
     source_sha256: str = ""
     source_snapshot_path: str | None = None
+    source_kind: str = "file"
+    source_snapshot_dir: str | None = None
+    source_primary: str | None = None
+    source_files: list[str] = field(default_factory=list)
     openhands_start_task_id: str | None = None
     openhands_conversation_id: str | None = None
     openhands_conversation_url: str | None = None

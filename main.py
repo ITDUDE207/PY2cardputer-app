@@ -19,6 +19,7 @@ from core.errors import ConfigError, GitError, Py2CardputerError
 from core.jobs import JobStore
 from core.logger import build_logger
 from core.models import JobStatus, ProgressEvent
+from core.notifications import Notifier
 from core.pipeline import ConversionPipeline
 from github.repository import GitAuthResult, GitHubRepository
 
@@ -51,7 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run a conversion without the GUI (requires --file).",
     )
-    parser.add_argument("--file", type=Path, help="MicroPython .py file to convert (CLI mode).")
+    parser.add_argument(
+        "--file",
+        type=Path,
+        help="MicroPython .py file, project folder, or .zip archive to convert (CLI mode).",
+    )
     parser.add_argument("--fqbn", help="Override the Arduino FQBN for this run.")
     parser.add_argument(
         "--check",
@@ -178,6 +183,7 @@ def run_cli(config: Config, logger, args: argparse.Namespace) -> int:
 
     print(f"Job       : {job.job_id}")
     print(f"Source    : {job.source_path}")
+    print(f"Input     : {job.source_kind} ({len(job.source_files) or 1} file(s))")
     print(f"Repository: {job.repository}")
     print(f"Branch    : {job.branch}")
     print(f"Build dir : {job.job_dir}")
@@ -209,6 +215,32 @@ def run_cli(config: Config, logger, args: argparse.Namespace) -> int:
         print(f"Binary    : {job.binary_path}")
     if job.error:
         print(f"Error     : {job.error}")
+
+    notifier = Notifier(
+        enabled=config.notifications_enabled,
+        native=config.native_notifications,
+        logger=logger.getChild("notifications"),
+    )
+    if job.status is JobStatus.SUCCEEDED:
+        notifier.notify(
+            "Build succeeded",
+            f"{job.app_name} compiled.\n{job.binary_path or ''}".strip(),
+            "success",
+        )
+    elif job.status is JobStatus.WAITING_FOR_USER:
+        notifier.notify(
+            "OpenHands needs you",
+            f"{job.app_name} is waiting for confirmation.",
+            "warning",
+        )
+    elif job.status is JobStatus.CANCELLED:
+        notifier.notify("Conversion cancelled", f"{job.app_name} was cancelled.", "warning")
+    else:
+        notifier.notify(
+            "Build failed",
+            f"{job.app_name}: {job.error or job.message or 'See the log.'}",
+            "error",
+        )
 
     if job.status is JobStatus.SUCCEEDED:
         return EXIT_OK

@@ -12,6 +12,7 @@ from core.validation import (
     sanitize_slug,
     validate_app_name,
     validate_python_source_file,
+    validate_source_input,
 )
 
 VALID_SOURCE = """\
@@ -160,3 +161,92 @@ def test_syntax_error_is_warning_only() -> None:
 def test_no_imports_warning() -> None:
     inspection = inspect_python_source("x = 1\n")
     assert inspection.warnings
+
+
+def _write_folder_project(root: Path) -> None:
+    (root / "main.py").write_text(VALID_SOURCE, encoding="utf-8")
+    assets = root / "assets"
+    assets.mkdir()
+    (assets / "logo.txt").write_text("logo", encoding="utf-8")
+    (root / "notes.txt").write_text("notes", encoding="utf-8")
+    cache = root / "__pycache__"
+    cache.mkdir()
+    (cache / "ignored.py").write_text("print('ignored')\n", encoding="utf-8")
+    (root / ".env").write_text("SECRET=never-upload\n", encoding="utf-8")
+
+
+def test_validate_folder_bundle(tmp_path: Path) -> None:
+    project = tmp_path / "MyProject"
+    project.mkdir()
+    _write_folder_project(project)
+
+    source = validate_source_input(project)
+
+    assert source.kind == "folder"
+    assert source.primary_relative == "main.py"
+    assert source.filename == "main.py"
+    assert source.app_name == "MyProject"
+    assert source.file_count == 3
+    assert source.asset_count == 2
+    assert "assets/logo.txt" in source.bundle
+    assert "notes.txt" in source.bundle
+    assert ".env" not in source.bundle
+    assert "__pycache__/ignored.py" not in source.bundle
+    assert source.text == VALID_SOURCE
+    assert "m5stack" in source.inspection.imports
+    assert (project / ".env").read_text(encoding="utf-8") == "SECRET=never-upload\n"
+
+
+def test_validate_zip_bundle(tmp_path: Path) -> None:
+    archive = tmp_path / "MyZipApp.zip"
+    import zipfile
+
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("src/main.py", VALID_SOURCE)
+        bundle.writestr("src/assets/icon.txt", "icon")
+        bundle.writestr("__MACOSX/._main.py", "junk")
+        bundle.writestr(".env", "SECRET=never-upload")
+
+    source = validate_source_input(archive)
+
+    assert source.kind == "zip"
+    assert source.primary_relative == "src/main.py"
+    assert source.app_name == "MyZipApp"
+    assert source.bundle["src/assets/icon.txt"] == b"icon"
+    assert "__MACOSX/._main.py" not in source.bundle
+    assert ".env" not in source.bundle
+    assert source.inspection.imports == ["m5stack", "m5ui", "time"]
+
+
+def test_validate_zip_rejects_path_traversal(tmp_path: Path) -> None:
+    archive = tmp_path / "bad.zip"
+    import zipfile
+
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("../escape.py", "print(1)\n")
+
+    with pytest.raises(ValidationError):
+        validate_source_input(archive)
+
+
+def test_validate_zip_requires_python(tmp_path: Path) -> None:
+    archive = tmp_path / "assets.zip"
+    import zipfile
+
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("readme.txt", "no python here")
+
+    with pytest.raises(ValidationError):
+        validate_source_input(archive)
+
+
+def test_validate_folder_rejects_symlink(tmp_path: Path) -> None:
+    project = tmp_path / "linked"
+    project.mkdir()
+    (project / "main.py").write_text(VALID_SOURCE, encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    (project / "link.txt").symlink_to(outside)
+
+    with pytest.raises(ValidationError):
+        validate_source_input(project)

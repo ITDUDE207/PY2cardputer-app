@@ -118,6 +118,30 @@ class SettingsPage(ctk.CTkFrame):
         self._field(body, 1, "Polling interval", "poll_interval_seconds", placeholder="5")
         self._field(body, 2, "Startup timeout", "startup_timeout_seconds", placeholder="900")
         self._field(body, 3, "Execution timeout", "execution_timeout_seconds", placeholder="5400")
+        self.notifications_var = ctk.BooleanVar(value=True)
+        self.native_notifications_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            body,
+            text="Show notifications when a build finishes",
+            variable=self.notifications_var,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text"],
+            font=font(12),
+            border_color=COLORS["border"],
+            checkmark_color=COLORS["bg"],
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 2))
+        ctk.CTkCheckBox(
+            body,
+            text="Try native Windows toast (best effort; in-app banner always appears)",
+            variable=self.native_notifications_var,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_muted"],
+            font=font(11),
+            border_color=COLORS["border"],
+            checkmark_color=COLORS["bg"],
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     def _build_actions(self) -> None:
         card = ctk.CTkFrame(self.scroll, fg_color="transparent")
@@ -214,6 +238,8 @@ class SettingsPage(ctk.CTkFrame):
             "startup_timeout_seconds": _number(config.startup_timeout_seconds),
             "execution_timeout_seconds": _number(config.execution_timeout_seconds),
         }
+        self.notifications_var.set(bool(config.notifications_enabled))
+        self.native_notifications_var.set(bool(config.native_notifications))
         for key, entry in self.entries.items():
             entry.delete(0, "end")
             value = values.get(key, "")
@@ -236,8 +262,13 @@ class SettingsPage(ctk.CTkFrame):
             )
         )
 
-    def _values(self) -> dict[str, str]:
-        return {key: entry.get().strip() for key, entry in self.entries.items()}
+    def _values(self) -> dict[str, object]:
+        values: dict[str, object] = {
+            key: entry.get().strip() for key, entry in self.entries.items()
+        }
+        values["notifications_enabled"] = bool(self.notifications_var.get())
+        values["native_notifications"] = bool(self.native_notifications_var.get())
+        return values
 
     # ---------------------------------------------------------------- actions
     def save(self, silent: bool = False) -> bool:

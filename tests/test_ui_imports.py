@@ -74,6 +74,7 @@ def test_ui_modules_import(gui_stubs) -> None:
     assert callable(ui.app.Py2CardputerApp.cancel_conversion)
     assert callable(ui.app.Py2CardputerApp.check_openhands)
     assert callable(ui.app.Py2CardputerApp.save_settings)
+    assert callable(ui.app.Py2CardputerApp.notify)
     assert hasattr(ui.app.Py2CardputerApp, "clear_api_key")
     assert ui.theme.COLORS["bg"].startswith("#")
     assert set(ui.theme.PAGE_TITLES) == {"dashboard", "conversion", "history", "settings", "about"}
@@ -94,6 +95,7 @@ def test_pages_expose_expected_hooks(gui_stubs) -> None:
 
     assert callable(ui.dashboard.DashboardPage.refresh)
     assert callable(ui.conversion.ConversionPage.choose_file)
+    assert callable(ui.conversion.ConversionPage.choose_folder)
     assert callable(ui.conversion.ConversionPage.on_progress)
     assert callable(ui.conversion.ConversionPage.on_job_finished)
     assert callable(ui.history.HistoryPage.refresh)
