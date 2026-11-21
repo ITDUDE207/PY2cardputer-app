@@ -10,7 +10,7 @@ import customtkinter as ctk
 
 from core.models import Job, JobStatus, ProgressEvent, StepRecord, StepStatus
 from core.pipeline import STEP_ORDER
-from core.validation import SourceFile, validate_python_source_file
+from core.validation import SourceFile, validate_source_input
 from ui.theme import (
     COLORS,
     entry_options,
@@ -59,7 +59,7 @@ class ConversionPage(ctk.CTkFrame):
         card = SectionCard(
             self.scroll,
             "Source application",
-            "UIFlow 2.0 MicroPython file (.py). The original file is never modified.",
+            "UIFlow 2.0 .py file, project folder or .zip archive. The original input is never modified.",
         )
         card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         body = card.body
@@ -78,11 +78,18 @@ class ConversionPage(ctk.CTkFrame):
         buttons.grid(row=0, column=1, sticky="e")
         self.upload_button = ctk.CTkButton(
             buttons,
-            text="Upload Python File",
+            text="Upload File or ZIP",
             command=self.choose_file,
             **primary_button_options(),
         )
         self.upload_button.pack(side="left")
+        self.folder_button = ctk.CTkButton(
+            buttons,
+            text="Select Folder",
+            command=self.choose_folder,
+            **secondary_button_options(),
+        )
+        self.folder_button.pack(side="left", padx=(8, 0))
         self.clear_button = ctk.CTkButton(
             buttons,
             text="Clear",
@@ -93,7 +100,7 @@ class ConversionPage(ctk.CTkFrame):
 
         self.file_meta_label = ctk.CTkLabel(
             body,
-            text="Supported: UIFlow 2.0 apps using display, keyboard, sensors and Wi-Fi.",
+            text="Supported: .py files, project folders and .zip archives using display, keyboard, sensors and Wi-Fi.",
             font=font(11),
             text_color=COLORS["text_muted"],
             anchor="w",
@@ -288,33 +295,63 @@ class ConversionPage(ctk.CTkFrame):
             return
         path = filedialog.askopenfilename(
             parent=self,
-            title="Select a UIFlow 2.0 MicroPython file",
-            filetypes=[("MicroPython source", "*.py"), ("All files", "*.*")],
+            title="Select a UIFlow file or ZIP",
+            filetypes=[
+                ("MicroPython source or ZIP", "*.py *.zip"),
+                ("MicroPython source", "*.py"),
+                ("ZIP archive", "*.zip"),
+                ("All files", "*.*"),
+            ],
+        )
+        if path:
+            self.load_file(path)
+
+    def choose_folder(self) -> None:
+        if self.app.busy:
+            messagebox.showinfo("Py2Cardputer", "Wait for the running conversion to finish.")
+            return
+        path = filedialog.askdirectory(
+            parent=self,
+            title="Select a UIFlow project folder",
+            mustexist=True,
         )
         if path:
             self.load_file(path)
 
     def load_file(self, path: Path | str) -> None:
         try:
-            source = validate_python_source_file(path)
+            source = validate_source_input(path)
         except Exception as exc:  # ValidationError or OSError
-            messagebox.showerror("Invalid Python file", str(exc))
+            messagebox.showerror("Invalid conversion input", str(exc))
             return
         self.selected_path = source.path
         self.selected_source = source
-        self.file_name_label.configure(text=source.filename, text_color=COLORS["text"])
+        self.file_name_label.configure(text=source.display_name, text_color=COLORS["text"])
         imports = ", ".join(source.inspection.imports) or "none detected"
+        bundle_line = (
+            "Single Python file"
+            if source.kind == "file"
+            else f"{source.kind.upper()} bundle · {source.file_count} file(s) · "
+            f"{source.asset_count} asset(s)"
+        )
         self.file_meta_label.configure(
             text=(
                 f"{source.path}\n"
-                f"{source.size_bytes:,} bytes  ·  {source.inspection.line_count} lines  ·  "
+                f"{bundle_line}  ·  {source.size_bytes:,} bytes  ·  "
+                f"{source.inspection.line_count} lines  ·  "
                 f"SHA-256 {source.sha256[:16]}…  ·  sketch {source.app_name}\n"
+                f"Primary: {source.primary_relative}\n"
                 f"Imports: {imports}"
             )
         )
-        warnings = source.inspection.warnings
+        warnings = list(source.inspection.warnings)
+        if source.asset_count:
+            warnings.append(
+                f"{source.asset_count} asset file(s) will be uploaded under input/ and "
+                "can be copied into the sketch data/ folder by OpenHands."
+            )
         self.file_warning_label.configure(text="\n".join(warnings))
-        self.set_status_text(f"Selected {source.filename}. Ready to convert.")
+        self.set_status_text(f"Selected {source.display_name}. Ready to convert.")
 
     def clear_file(self) -> None:
         if self.app.busy:
@@ -323,7 +360,7 @@ class ConversionPage(ctk.CTkFrame):
         self.selected_source = None
         self.file_name_label.configure(text="No file selected", text_color=COLORS["text"])
         self.file_meta_label.configure(
-            text="Supported: UIFlow 2.0 apps using display, keyboard, sensors and Wi-Fi."
+            text="Supported: .py files, project folders and .zip archives using display, keyboard, sensors and Wi-Fi."
         )
         self.file_warning_label.configure(text="")
         self.set_status_text("Ready.")
@@ -356,7 +393,10 @@ class ConversionPage(ctk.CTkFrame):
         if self.app.busy:
             return
         if not self.selected_path:
-            messagebox.showwarning("No file selected", "Upload a UIFlow .py file first.")
+            messagebox.showwarning(
+                "No input selected",
+                "Upload a UIFlow .py file or ZIP, or select a project folder first.",
+            )
             return
         fqbn = self.fqbn_entry.get().strip()
         if not fqbn:
@@ -383,6 +423,7 @@ class ConversionPage(ctk.CTkFrame):
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.upload_button.configure(state="disabled")
+        self.folder_button.configure(state="disabled")
         self.clear_button.configure(state="disabled")
         self.status_text.configure(text="Starting conversion…", text_color=COLORS["info"])
         self.branch_value.set_value(job.branch)
@@ -449,6 +490,7 @@ class ConversionPage(ctk.CTkFrame):
         self.start_button.configure(state="normal")
         self.cancel_button.configure(state="disabled")
         self.upload_button.configure(state="normal")
+        self.folder_button.configure(state="normal")
         self.clear_button.configure(state="normal")
         self.step_list.set_steps(job.steps or [])
         self.branch_value.set_value(job.branch)

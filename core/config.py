@@ -53,6 +53,8 @@ ENV_MAP: dict[str, tuple[str, type]] = {
     "PY2CARDPUTER_EXECUTION_TIMEOUT": ("execution_timeout_seconds", float),
     "PY2CARDPUTER_REQUEST_TIMEOUT": ("request_timeout_seconds", float),
     "PY2CARDPUTER_KEEP_WORKSPACE": ("keep_workspace_clone", bool),
+    "PY2CARDPUTER_NOTIFICATIONS": ("notifications_enabled", bool),
+    "PY2CARDPUTER_NATIVE_NOTIFICATIONS": ("native_notifications", bool),
 }
 
 API_KEY_ENV = "OPENHANDS_API_KEY"
@@ -187,6 +189,8 @@ class Config:
     request_timeout_seconds: float = 60.0
     compile_timeout_seconds: float = 900.0
     keep_workspace_clone: bool = True
+    notifications_enabled: bool = True
+    native_notifications: bool = True
     extra_compile_args: list[str] = field(default_factory=list)
     board_profiles: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_BOARD_PROFILES))
     root: Path = field(default_factory=project_root, repr=False, compare=False)

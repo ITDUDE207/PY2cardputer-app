@@ -16,11 +16,12 @@ import customtkinter as ctk
 
 from ai.openhands_client import OpenHandsClient
 from compiler.arduino_cli import ArduinoCLI
-from core.config import Config
+from core.config import Config, parse_bool
 from core.errors import Py2CardputerError, ValidationError
 from core.jobs import JobStore
-from core.logger import build_logger
+from core.logger import build_logger, redact
 from core.models import Job, JobStatus
+from core.notifications import Notifier
 from core.pipeline import ConversionPipeline
 from github.repository import GitHubRepository
 from ui.about import AboutPage
@@ -29,6 +30,7 @@ from ui.dashboard import DashboardPage
 from ui.history import HistoryPage
 from ui.settings import SettingsPage
 from ui.theme import COLORS, PAGE_TITLES, apply_appearance, font, status_color
+from ui.widgets import NotificationBanner
 
 NAV_ITEMS = [
     ("dashboard", "Dashboard"),
@@ -50,6 +52,11 @@ class Py2CardputerApp(ctk.CTk):
         self.config = config
         self.logger = build_logger("py2cardputer", log_dir=config.log_path)
         self.job_store = JobStore(config.build_path, self.logger, log_dir=config.log_path)
+        self.notifier = Notifier(
+            enabled=config.notifications_enabled,
+            native=config.native_notifications,
+            logger=self.logger.getChild("notifications"),
+        )
         self.events: queue.Queue = queue.Queue()
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="py2cardputer")
         self.pipeline: ConversionPipeline | None = None
@@ -137,6 +144,7 @@ class Py2CardputerApp(ctk.CTk):
         main.grid(row=0, column=1, sticky="nsew")
         main.grid_columnconfigure(0, weight=1)
         main.grid_rowconfigure(1, weight=1)
+        self.notification_banner = NotificationBanner(main)
 
         header = ctk.CTkFrame(main, fg_color="transparent", height=76)
         header.grid(row=0, column=0, sticky="ew", padx=28, pady=(20, 8))
@@ -317,12 +325,41 @@ class Py2CardputerApp(ctk.CTk):
         self.history.refresh()
         if job.status is JobStatus.SUCCEEDED:
             self.set_activity("Build succeeded", "success")
+            self.notify(
+                "Build succeeded",
+                f"{job.app_name} compiled successfully.\n{job.binary_path or 'Binary path unavailable'}",
+                "success",
+            )
         elif job.status is JobStatus.WAITING_FOR_USER:
             self.set_activity("Waiting for you", "warning")
+            self.notify(
+                "OpenHands needs you",
+                f"{job.app_name} is waiting for confirmation. Open the conversation to continue.",
+                "warning",
+            )
         elif job.status is JobStatus.CANCELLED:
             self.set_activity("Cancelled", "warning")
+            self.notify("Conversion cancelled", f"{job.app_name} was cancelled.", "warning")
         else:
             self.set_activity("Build failed", "error")
+            self.notify(
+                "Build failed",
+                f"{job.app_name}: {job.error or job.message or 'See the job log for details.'}",
+                "error",
+            )
+
+    def notify(self, title: str, message: str, level: str = "info") -> None:
+        """Show the in-app banner and attempt a native Windows toast."""
+        safe_title = redact(title)
+        safe_message = redact(message)
+        try:
+            self.notification_banner.show(safe_title, safe_message, level)
+        except Exception:  # a notification must never break a job
+            self.logger.debug("Could not show in-app notification", exc_info=True)
+        try:
+            self.notifier.notify(safe_title, safe_message, level)
+        except Exception:  # pragma: no cover - defensive
+            self.logger.debug("Native notification failed", exc_info=True)
 
     # ------------------------------------------------------------- diagnostics
     def check_openhands(self, callback) -> None:
@@ -371,6 +408,8 @@ class Py2CardputerApp(ctk.CTk):
             "poll_interval_seconds": config.poll_interval_seconds,
             "startup_timeout_seconds": config.startup_timeout_seconds,
             "execution_timeout_seconds": config.execution_timeout_seconds,
+            "notifications_enabled": config.notifications_enabled,
+            "native_notifications": config.native_notifications,
         }
         config.openhands_api_url = values["openhands_api_url"].strip()
         config.github_repository = values["github_repository"].strip()
@@ -378,6 +417,12 @@ class Py2CardputerApp(ctk.CTk):
         config.arduino_fqbn = values["arduino_fqbn"].strip()
         config.build_dir = values["build_dir"].strip()
         config.openhands_llm_model = values["openhands_llm_model"].strip()
+        config.notifications_enabled = parse_bool(
+            values.get("notifications_enabled", config.notifications_enabled)
+        )
+        config.native_notifications = parse_bool(
+            values.get("native_notifications", config.native_notifications)
+        )
         try:
             config.poll_interval_seconds = float(values["poll_interval_seconds"])
             config.startup_timeout_seconds = float(values["startup_timeout_seconds"])
@@ -402,6 +447,10 @@ class Py2CardputerApp(ctk.CTk):
             return [f"Could not save settings: {exc}"]
 
         self.job_store = JobStore(config.build_path, self.logger, log_dir=config.log_path)
+        self.notifier.configure(
+            enabled=config.notifications_enabled,
+            native=config.native_notifications,
+        )
         return []
 
     def clear_api_key(self) -> bool:

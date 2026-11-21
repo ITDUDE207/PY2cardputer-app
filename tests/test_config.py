@@ -135,3 +135,19 @@ def test_resolve_relative_paths(tmp_path: Path) -> None:
     absolute = tmp_path / "elsewhere"
     config.build_dir = str(absolute)
     assert config.build_path == absolute
+
+
+def test_notification_settings_and_env_override(tmp_path: Path) -> None:
+    config = load(tmp_path)
+    assert config.notifications_enabled is True
+    assert config.native_notifications is True
+
+    overridden = load(
+        tmp_path,
+        env={
+            "PY2CARDPUTER_NOTIFICATIONS": "false",
+            "PY2CARDPUTER_NATIVE_NOTIFICATIONS": "0",
+        },
+    )
+    assert overridden.notifications_enabled is False
+    assert overridden.native_notifications is False

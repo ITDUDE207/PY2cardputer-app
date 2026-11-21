@@ -56,3 +56,19 @@ def test_prompt_requires_report_sections() -> None:
         "Any remaining manual work.",
     ):
         assert section in CONVERSION_INSTRUCTIONS
+
+
+def test_prompt_lists_multi_file_bundle_and_assets() -> None:
+    prompt = build_conversion_prompt(
+        app_name="MyApp",
+        source_filename="main.py",
+        source_relative="src/main.py",
+        input_files=["src/main.py", "src/lib.py", "assets/logo.png"],
+        repository="owner/repo",
+        branch="py2cardputer/bundle",
+    )
+    assert "input/src/main.py" in prompt
+    assert "input/src/lib.py" in prompt
+    assert "input/assets/logo.png" in prompt
+    assert "Read every Python file in the input bundle" in prompt
+    assert "firmware/MyApp/data/" in prompt
