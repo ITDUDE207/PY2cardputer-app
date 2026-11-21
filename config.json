@@ -1,0 +1,21 @@
+{
+  "openhands_api_url": "https://app.all-hands.dev",
+  "openhands_llm_model": "",
+  "github_repository": "ITDUDE207/Py2Cardputer-Workspace",
+  "github_branch_prefix": "py2cardputer",
+  "arduino_cli_path": "arduino-cli",
+  "arduino_fqbn": "m5stack:esp32:m5stack_cardputer",
+  "build_dir": "builds",
+  "log_dir": "logs",
+  "workspace_dir": "workspace",
+  "poll_interval_seconds": 5.0,
+  "startup_timeout_seconds": 900.0,
+  "execution_timeout_seconds": 5400.0,
+  "request_timeout_seconds": 60.0,
+  "compile_timeout_seconds": 900.0,
+  "keep_workspace_clone": true,
+  "extra_compile_args": [],
+  "board_profiles": {
+    "M5Stack Cardputer ADV": "m5stack:esp32:m5stack_cardputer"
+  }
+}
